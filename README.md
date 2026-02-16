@@ -1,4 +1,4 @@
-# public-backup-grep (C)
+# sfilecheck (C)
 
 A small C utility that **recursively scans multiple site directories** under a given root path and reports potentially sensitive files that appear to be **publicly accessible** (e.g., exposed database dumps or WordPress config backups).
 
@@ -70,5 +70,5 @@ On Debian/Ubuntu, you’ll typically need:
 
 Build:
 ```bash
-gcc -O2 -Wall -Wextra -pedantic -pthread main.c -lacl -o public-backup-grep
+gcc -O2 -Wall -Wextra -pedantic -pthread main.c -lacl -o sfilecheck
 
