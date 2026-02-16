@@ -7,15 +7,10 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <time.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <acl/libacl.h>
-#include <sys/types.h>
 
 #define MAX_SITES 4096
 #define MAX_THREADS 2
 #define NUM_THREADS 4096
-#define WWW_DATA_UID 33
 
 sem_t sem;
 
@@ -23,15 +18,6 @@ typedef struct {
     int tid;
     char *path;
 } thread_site;
-
-bool dont_want_dir(const char *filename);
-void remove_extra_trailslash(char **path);
-bool has_www_data_exec_acl(const char *path);
-bool is_publicly_accessible(const char *path);
-char* get_time();
-void grep(const char *dir_path, int tid);
-void* rungrep(void *arg);
-void traverse(char *path, int depth, char **sites, int *count);
 
 bool dont_want_dir(const char *filename) {
     char *strarr[] = {".", "..", "backup", "phpmyadmin", "defaultsite", "lost+found"};
@@ -47,84 +33,6 @@ void remove_extra_trailslash(char **path) {
         tmp[strlen(tmp)-1] = '\0';
     }
     strcat(tmp, "/");
-}
-
-bool has_www_data_exec_acl(const char *path) {
-    acl_t acl = acl_get_file(path, ACL_TYPE_ACCESS);
-    if (acl == NULL) {
-        return false;
-    }
-
-    acl_entry_t entry;
-    int entry_id = ACL_FIRST_ENTRY;
-    bool exec_permission = false;
-
-    while (acl_get_entry(acl, entry_id, &entry) == 1) {
-        entry_id = ACL_NEXT_ENTRY;
-        acl_tag_t tag_type;
-        uid_t *user_id;
-        acl_permset_t permset;
-
-        if (acl_get_tag_type(entry, &tag_type) != 0) continue;
-        if (tag_type != ACL_USER) continue;
-
-        user_id = (uid_t *)acl_get_qualifier(entry);
-        if (user_id == NULL) continue;
-
-        if (*user_id == WWW_DATA_UID) {
-            if (acl_get_permset(entry, &permset) == 0 && acl_get_perm(permset, ACL_EXECUTE)) {
-                exec_permission = true;
-            }
-        }
-        acl_free(user_id);
-    }
-
-    acl_free(acl);
-    return exec_permission;
-}
-
-bool is_publicly_accessible(const char *path) {
-    struct stat st;
-    if (stat(path, &st) != 0) {
-        return false;
-    }
-    
-    if (!(st.st_mode & S_IROTH)) {
-        return false;
-    }
-    
-    char temp_path[PATH_MAX];
-    strncpy(temp_path, path, PATH_MAX);
-    char *dir = dirname(temp_path);
-
-    while (dir != NULL) {
-        if (stat(dir, &st) != 0) {
-            return false;
-        }
-
-        if (strstr(dir, "/public") != NULL) {
-            if (st.st_mode & S_IXOTH) {
-                return true;
-            }
-            return has_www_data_exec_acl(dir);
-        }
-
-        if (!(st.st_mode & S_IXOTH)) {
-            return false;
-        }
-        dir = dirname(dir);
-    }
-    return false;
-}
-
-char* get_time() {
-    time_t epoch;
-    time(&epoch);
-    char *buf = malloc(20);
-
-    struct tm *lt = localtime(&epoch);
-    strftime(buf, 20, "%F %T", lt);
-    return buf;
 }
 
 void traverse(char *path, int depth, char **sites, int *count) {
@@ -192,10 +100,8 @@ void grep(const char *dir_path, int tid) {
         } else if (entry->d_type == DT_REG) {
             if ((strstr(entry->d_name, "wp-config") && (strstr(entry->d_name, ".bac") || strstr(entry->d_name, ".bak") || strstr(entry->d_name, ".backup"))) ||
                 strstr(entry->d_name, ".sql")) {
-                if (strstr(full_path, "/public/") && is_publicly_accessible(full_path)) {
-                	char *time_str = get_time();
-                    printf("[%s] [TID:%04d] Found: %s\n", time_str, tid, full_path);
-					free(time_str);
+                if (strstr(full_path, "/public/")) {
+                    printf("[TID:%04d] Found: %s\n", tid, full_path);
                 }
             }
         }
